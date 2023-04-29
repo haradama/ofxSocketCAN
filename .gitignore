@@ -2,6 +2,7 @@
 # general patterns
 #########################
 
+.vscode
 docs/html
 docs/tagfile.xml
 
