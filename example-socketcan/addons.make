@@ -1,1 +1,4 @@
+ofxIO
+ofxPoco
+ofxSerial
 ofxSocketCAN

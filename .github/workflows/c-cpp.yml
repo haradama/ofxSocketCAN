@@ -1,23 +1,36 @@
-name: C/C++ CI
+name: build
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ main ]
 
 jobs:
   build:
-
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Cross‑platform build matrix
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
 
     steps:
-    - uses: actions/checkout@v4
-    - name: configure
-      run: ./configure
-    - name: make
-      run: make
-    - name: make check
-      run: make check
-    - name: make distcheck
-      run: make distcheck
+      # 1. Download openFrameworks
+      - name: Setup openFrameworks
+        uses: nandenjin/openframeworks-action@v1
+        with:
+          command: setup-of
+          of_version: 0.12.1
+
+      # 2. Checkout the addon (this repo) under apps/
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: 'apps/ofxSocketCAN'
+
+      # 5. Build the example project
+      - name: Build example
+        uses: nandenjin/openframeworks-action@v1
+        with:
+          command: build
+          project_root: 'apps/ofxSocketCAN/example'
