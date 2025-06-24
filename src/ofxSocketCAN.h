@@ -1,28 +1,40 @@
 #pragma once
-
 #include "ofMain.h"
+
 #include <linux/can.h>
 #include <linux/can/raw.h>
-#include <linux/can/error.h>
 #include <net/if.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <cerrno>
+#include <cstring>
+#include <string>
+
 class ofxSocketCAN {
 public:
-    ofxSocketCAN();
-    ~ofxSocketCAN();
+	ofxSocketCAN() = default;
+	~ofxSocketCAN();
 
-    bool setup(const std::string& interface, bool use_can_fd = false);
-    bool send(const can_frame& frame);
-    bool send(const canfd_frame& frame);
-    bool receive(can_frame& frame);
-    bool receive(canfd_frame& frame);
-    bool available();
+	bool setup(const std::string & interface);
+	bool setup(const std::string & interface, bool enable_can_fd);
+
+	bool send(const can_frame & frame) const;
+	bool send(const canfd_frame & frame) const;
+
+	bool receive(can_frame & frame) const;
+	bool receive(canfd_frame & frame) const;
+
+	[[nodiscard]] bool isOpen() const noexcept { return sockfd_ >= 0; }
 
 private:
-    int sockfd;
-    bool can_fd_enabled;
-    bool is_available;
+	ofxSocketCAN(const ofxSocketCAN &) = delete;
+	ofxSocketCAN & operator=(const ofxSocketCAN &) = delete;
+
+	bool enableCANFD();
+	void closeSocket() noexcept;
+
+	int sockfd_ { -1 };
+	bool can_fd_enabled_ { false };
 };

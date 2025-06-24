@@ -1,116 +1,108 @@
 #include "ofxSocketCAN.h"
 
-ofxSocketCAN::ofxSocketCAN() : sockfd(-1), can_fd_enabled(false), is_available(false) {}
+ofxSocketCAN::~ofxSocketCAN() { closeSocket(); }
 
-ofxSocketCAN::~ofxSocketCAN() {
-    if (sockfd >= 0) {
-        close(sockfd);
-    }
-
-    is_available = false;
+bool ofxSocketCAN::setup(const std::string & interface) {
+	return setup(interface, /*enable_can_fd =*/false);
 }
 
-bool ofxSocketCAN::setup(const std::string& interface, bool use_can_fd) {
-    can_fd_enabled = use_can_fd;
+bool ofxSocketCAN::setup(const std::string & interface, bool enable_can_fd) {
+	closeSocket();
+	if (interface.empty()) {
+		ofLogError("ofxSocketCAN") << "Interface name is empty.";
+		return false;
+	}
 
-    sockfd = socket(PF_CAN, SOCK_RAW, CAN_RAW);
-    if (sockfd < 0) {
-        ofLogError("ofxSocketCAN") << "Error opening socket.";
-        return false;
-    }
+	sockfd_ = ::socket(PF_CAN, SOCK_RAW, CAN_RAW);
+	if (sockfd_ < 0) {
+		ofLogError("ofxSocketCAN") << "socket() failed: " << std::strerror(errno);
+		return false;
+	}
 
-    if (can_fd_enabled) {
-        int enable = 1;
-        if (setsockopt(sockfd, SOL_CAN_RAW, CAN_RAW_FD_FRAMES, &enable, sizeof(enable)) < 0) {
-            ofLogError("ofxSocketCAN") << "Error enabling CAN FD support.";
-            close(sockfd);
-            sockfd = -1;
-            return false;
-        }
-    }
+	can_fd_enabled_ = enable_can_fd;
+	if (can_fd_enabled_ && !enableCANFD()) {
+		closeSocket();
+		return false;
+	}
 
-    struct ifreq ifr;
-    strncpy(ifr.ifr_name, interface.c_str(), IFNAMSIZ - 1);
-    ifr.ifr_name[IFNAMSIZ - 1] = '\0';
+	struct ifreq ifr {};
+	std::strncpy(ifr.ifr_name, interface.c_str(), IFNAMSIZ - 1);
+	ifr.ifr_name[IFNAMSIZ - 1] = '\0';
 
-    if (ioctl(sockfd, SIOCGIFINDEX, &ifr) < 0) {
-        ofLogError("ofxSocketCAN") << "Error getting interface index.";
-        close(sockfd);
-        sockfd = -1;
-        return false;
-    }
+	if (ioctl(sockfd_, SIOCGIFINDEX, &ifr) < 0) {
+		ofLogError("ofxSocketCAN") << "ioctl(SIOCGIFINDEX) failed: " << std::strerror(errno);
+		closeSocket();
+		return false;
+	}
 
-    struct sockaddr_can addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.can_family = AF_CAN;
-    addr.can_ifindex = ifr.ifr_ifindex;
+	struct sockaddr_can addr {};
+	addr.can_family = AF_CAN;
+	addr.can_ifindex = ifr.ifr_ifindex;
 
-    if (bind(sockfd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        ofLogError("ofxSocketCAN") << "Error binding socket.";
-        close(sockfd);
-        sockfd = -1;
-        return false;
-    }
+	if (bind(sockfd_, reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr)) < 0) {
+		ofLogError("ofxSocketCAN") << "bind() failed: " << std::strerror(errno);
+		closeSocket();
+		return false;
+	}
 
-    is_available = true;
-
-    return true;
+	return true;
 }
 
-bool ofxSocketCAN::send(const can_frame& frame) {
-    if (sockfd < 0) {
-        return false;
-    }
-
-    if (can_fd_enabled) {
-        ofLogError("ofxSocketCAN") << "CAN FD is enabled. Use send(const canfd_frame&) instead.";
-        return false;
-    }
-
-    int nbytes = write(sockfd, &frame, sizeof(frame));
-    return nbytes == sizeof(frame);
+bool ofxSocketCAN::enableCANFD() {
+	int enable = 1;
+	if (setsockopt(sockfd_, SOL_CAN_RAW, CAN_RAW_FD_FRAMES,
+			&enable, sizeof(enable))
+		< 0) {
+		ofLogError("ofxSocketCAN")
+			<< "setsockopt(CAN_RAW_FD_FRAMES) failed: " << std::strerror(errno);
+		return false;
+	}
+	return true;
 }
 
-bool ofxSocketCAN::send(const canfd_frame& frame) {
-    if (sockfd < 0) {
-        return false;
-    }
-
-    if (!can_fd_enabled) {
-        ofLogError("ofxSocketCAN") << "CAN FD is not enabled. Use send(const can_frame&) instead.";
-        return false;
-    }
-
-    int nbytes = write(sockfd, &frame, sizeof(frame));
-    return nbytes == sizeof(frame);
+bool ofxSocketCAN::send(const can_frame & frame) const {
+	if (!isOpen() || can_fd_enabled_) {
+		ofLogError("ofxSocketCAN")
+			<< "Socket not open, or CAN-FD mode active (wrong overload).";
+		return false;
+	}
+	ssize_t nbytes = ::write(sockfd_, &frame, sizeof(frame));
+	return nbytes == static_cast<ssize_t>(sizeof(frame));
 }
 
-bool ofxSocketCAN::receive(can_frame& frame) {
-    if (sockfd < 0) {
-        return false;
-    }
-
-    if (can_fd_enabled) {
-        ofLogError("ofxSocketCAN") << "CAN FD is enabled. Use receive(canfd_frame&) instead.";
-        return false;
-    }
-
-    int nbytes = read(sockfd, &frame, sizeof(frame));
-    return nbytes == sizeof(frame);
+bool ofxSocketCAN::send(const canfd_frame & frame) const {
+	if (!isOpen() || !can_fd_enabled_) {
+		ofLogError("ofxSocketCAN")
+			<< "Socket not open, or CAN-FD not enabled (wrong overload).";
+		return false;
+	}
+	ssize_t nbytes = ::write(sockfd_, &frame, sizeof(frame));
+	return nbytes == static_cast<ssize_t>(sizeof(frame));
 }
 
-bool ofxSocketCAN::receive(canfd_frame& frame) {
-    if (sockfd < 0) {
-        return false;
-    }
-
-    if (!can_fd_enabled) {
-        ofLogError("ofxSocketCAN") << "CAN FD is not enabled. Use receive(can_frame&) instead.";
-        return false;
-    }
-
-    int nbytes = read(sockfd, &frame, sizeof(frame));
-    return nbytes == sizeof(frame);
+bool ofxSocketCAN::receive(can_frame & frame) const {
+	if (!isOpen() || can_fd_enabled_) {
+		ofLogError("ofxSocketCAN")
+			<< "Socket not open, or CAN-FD mode active (wrong overload).";
+		return false;
+	}
+	ssize_t nbytes = ::read(sockfd_, &frame, sizeof(frame));
+	return nbytes == static_cast<ssize_t>(sizeof(frame));
 }
 
-bool ofxSocketCAN::available() {return is_available;}
+bool ofxSocketCAN::receive(canfd_frame & frame) const {
+	if (!isOpen() || !can_fd_enabled_) {
+		ofLogError("ofxSocketCAN")
+			<< "Socket not open, or CAN-FD not enabled (wrong overload).";
+		return false;
+	}
+	ssize_t nbytes = ::read(sockfd_, &frame, sizeof(frame));
+	return nbytes == static_cast<ssize_t>(sizeof(frame));
+}
+
+void ofxSocketCAN::closeSocket() noexcept {
+	if (sockfd_ >= 0) {
+		::close(sockfd_);
+		sockfd_ = -1;
+	}
+}
