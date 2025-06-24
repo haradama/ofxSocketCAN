@@ -1,97 +1,25 @@
 #include "ofApp.h"
 
-//--------------------------------------------------------------
-void ofApp::setup(){
-    ofSetWindowTitle("ofxSocketCAN Example");
+void ofApp::setup() {
+	ofSetWindowTitle("ofxSocketCAN Example");
 
-    interfaceName = "vcan0";
-    device.setup(interfaceName);
+	if (!can.setup("vcan0")) { // classical CAN on virtual interface
+		ofLogError() << "Failed to open CAN";
+		return;
+	}
 
-    if (device.available()) {
-        ofLogNotice("ofApp::setup") << "Connected to " << interfaceName;
+	can_frame frame {};
+	frame.can_id = 0x321;
+	frame.can_dlc = 2;
+	frame.data[0] = 0xAB;
+	frame.data[1] = 0xCD;
 
-        can_frame sendFrame;
-        sendFrame.can_id = 0x123;
-        sendFrame.can_dlc = 3;
-        sendFrame.data[0] = 0x11;
-        sendFrame.data[1] = 0x22;
-        sendFrame.data[2] = 0x33;
-
-        if (device.send(sendFrame)) {
-            ofLogNotice("ofApp::setup") << "Sent CAN frame: ID 0x" << std::hex << sendFrame.can_id;
-        } else {
-            ofLogError("ofApp::setup") << "Failed to send CAN frame.";
-        }
-    } else {
-        ofLogError("ofApp::setup") << "Failed to connect to " << interfaceName;
-    }
+	can.send(frame);
 }
 
-//--------------------------------------------------------------
-void ofApp::update(){
-    if (device.available()) {
-        if (device.receive(receiveFrame)) {
-            ofLogNotice("ofApp::update") << "Received CAN frame: ID 0x" << std::hex << receiveFrame.can_id;
-        }
-    }
-}
-
-//--------------------------------------------------------------
-void ofApp::draw(){
-
-}
-
-//--------------------------------------------------------------
-void ofApp::keyPressed(int key){
-
-}
-
-//--------------------------------------------------------------
-void ofApp::keyReleased(int key){
-
-}
-
-//--------------------------------------------------------------
-void ofApp::mouseMoved(int x, int y ){
-
-}
-
-//--------------------------------------------------------------
-void ofApp::mouseDragged(int x, int y, int button){
-
-}
-
-//--------------------------------------------------------------
-void ofApp::mousePressed(int x, int y, int button){
-
-}
-
-//--------------------------------------------------------------
-void ofApp::mouseReleased(int x, int y, int button){
-
-}
-
-//--------------------------------------------------------------
-void ofApp::mouseEntered(int x, int y){
-
-}
-
-//--------------------------------------------------------------
-void ofApp::mouseExited(int x, int y){
-
-}
-
-//--------------------------------------------------------------
-void ofApp::windowResized(int w, int h){
-
-}
-
-//--------------------------------------------------------------
-void ofApp::gotMessage(ofMessage msg){
-
-}
-
-//--------------------------------------------------------------
-void ofApp::dragEvent(ofDragInfo dragInfo){ 
-
+void ofApp::update() {
+	can_frame rx;
+	if (can.receive(rx)) {
+		ofLogNotice() << "ID: 0x" << std::hex << rx.can_id << "  len: " << std::dec << rx.can_dlc;
+	}
 }
