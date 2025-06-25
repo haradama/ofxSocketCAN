@@ -1,36 +1,46 @@
-name: build
+name: C/C++ CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ main ]
+    branches: [ "main" ]
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        # Cross‑platform build matrix
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
+  build-linux:
+    runs-on: ubuntu-latest
+    env:
+      OF_BRANCH: master
+      OF_ROOT: ${{ github.workspace }}/of
 
     steps:
-      # 1. Download openFrameworks
-      - name: Setup openFrameworks
-        uses: nandenjin/openframeworks-action@v1
-        with:
-          command: setup-of
-          of_version: 0.12.1
+      - uses: actions/checkout@v4
 
-      # 2. Checkout the addon (this repo) under apps/
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          path: 'apps/ofxSocketCAN'
+      - name: Install extra deps (addon-specific)
+        run: sudo apt-get update && sudo apt-get install -y pkg-config
 
-      # 5. Build the example project
+      - name: Clone openFrameworks
+        run: git clone --depth=1 --branch=${OF_BRANCH} https://github.com/openframeworks/openFrameworks.git ${OF_ROOT}
+
+      - name: Download oF core libraries
+        run: |
+          cd ${OF_ROOT}/scripts/linux
+          ./download_libs.sh
+
+      - name: Install oF dependencies (official CI script)
+        run: |
+          cd ${OF_ROOT}/scripts/ci/linux64
+          ./install.sh
+
+      - name: Build openFrameworks core (official CI script)
+        run: |
+          cd ${OF_ROOT}/scripts/ci/linux64
+          ./build.sh
+
       - name: Build example
-        uses: nandenjin/openframeworks-action@v1
-        with:
-          command: build
-          project_root: 'apps/ofxSocketCAN/example'
+        run: |
+          shopt -s extglob
+          mkdir -p ${OF_ROOT}/addons/ofxSocketCAN
+          cp -r !($(basename ${OF_ROOT})) ${OF_ROOT}/addons/ofxSocketCAN/
+          cd ${OF_ROOT}/addons/ofxSocketCAN/example-socketcan
+          make -j$(nproc)
